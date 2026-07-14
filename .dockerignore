@@ -9,3 +9,6 @@ Dockerfile
 docs/
 mkdocs.yml
 *.log
+
+# google-github-actions/auth writes short-lived credentials into the workspace.
+gha-creds-*.json
