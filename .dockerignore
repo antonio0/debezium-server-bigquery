@@ -4,3 +4,6 @@ Dockerfile
 .idea/
 .github/
 .run/
+
+# google-github-actions/auth writes short-lived credentials into the workspace.
+gha-creds-*.json

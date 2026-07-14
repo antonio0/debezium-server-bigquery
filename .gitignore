@@ -32,6 +32,7 @@ log
 npm-debug.log
 .DS_Store
 phantomjsdriver.log
+gha-creds-*.json
 
 generated-sources/
 
