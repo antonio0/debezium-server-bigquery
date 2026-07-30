@@ -18,8 +18,8 @@ import java.util.regex.Pattern;
 public final class ChangeSequenceNumber implements Comparable<ChangeSequenceNumber> {
   public static final String PSEUDO_COLUMN = "_CHANGE_SEQUENCE_NUMBER";
   private static final Pattern TRAILING_NUMBER = Pattern.compile("(\\d+)$");
+  private static final Pattern POSTGRES_LSN = Pattern.compile("^([0-9A-Fa-f]{1,8})/([0-9A-Fa-f]{1,8})$");
   private static final BigInteger MAX_SECTION_VALUE = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
-  private static final BigInteger ZERO = BigInteger.ZERO;
 
   private final List<BigInteger> sections;
 
@@ -37,7 +37,7 @@ public final class ChangeSequenceNumber implements Comparable<ChangeSequenceNumb
     }
     throw new DebeziumException("Cannot construct BigQuery change sequence: no supported source coordinates found; "
         + "configure unwrap add.fields with source.ts_ns,source.file,source.pos,source.row for MySQL or "
-        + "source.ts_ns,source.lsn,source.txId for PostgreSQL");
+        + "source.ts_ns,source.lsn,source.txId,transaction.total_order for PostgreSQL");
   }
 
   private static ChangeSequenceNumber fromMySql(JsonNode value, BigInteger timestamp) {
@@ -56,9 +56,30 @@ public final class ChangeSequenceNumber implements Comparable<ChangeSequenceNumb
   }
 
   private static ChangeSequenceNumber fromPostgres(JsonNode value, BigInteger timestamp) {
-    BigInteger lsn = numericField(value, "__source_lsn");
+    BigInteger lsn = postgresLsnField(value, "__source_lsn");
     BigInteger transactionId = numericField(value, "__source_txId");
-    return new ChangeSequenceNumber(List.of(timestamp, lsn, transactionId, ZERO));
+    BigInteger transactionOrder = numericField(value, "__transaction_total_order");
+    return new ChangeSequenceNumber(List.of(timestamp, lsn, transactionId, transactionOrder));
+  }
+
+  private static BigInteger postgresLsnField(JsonNode value, String field) {
+    JsonNode node = requiredField(value, field);
+    if (node.isIntegralNumber()) {
+      return numericField(value, field);
+    }
+    if (node.isTextual()) {
+      String raw = node.textValue();
+      Matcher matcher = POSTGRES_LSN.matcher(raw);
+      if (matcher.matches()) {
+        BigInteger high = new BigInteger(matcher.group(1), 16);
+        BigInteger low = new BigInteger(matcher.group(2), 16);
+        return bounded(field, raw, high.shiftLeft(32).add(low));
+      }
+      if (raw.matches("\\d+")) {
+        return bounded(field, raw, new BigInteger(raw));
+      }
+    }
+    throw invalid(field, node, "must be a non-negative decimal integer or PostgreSQL hexadecimal LSN (for example 0/16B3748)");
   }
 
   private static boolean hasValue(JsonNode value, String field) {

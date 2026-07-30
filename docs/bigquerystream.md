@@ -69,7 +69,8 @@ debezium.sink.bigquerystream.change-sequence.enabled=true
 For PostgreSQL:
 
 ```properties
-debezium.transforms.unwrap.add.fields=op,source.ts_ms,source.ts_ns,source.lsn,source.txId
+debezium.source.provide.transaction.metadata=true
+debezium.transforms.unwrap.add.fields=op,source.ts_ms,source.ts_ns,source.lsn,source.txId,transaction.total_order
 debezium.sink.bigquerystream.change-sequence.enabled=true
 ```
 
@@ -77,15 +78,17 @@ Sequences use four uppercase, zero-padded, 16-character hexadecimal sections. Th
 
 ```text
 MySQL:      source.ts_ns/binlog-file-index/source.pos/source.row
-PostgreSQL: source.ts_ns/source.lsn/source.txId/0
+PostgreSQL: source.ts_ns/source.lsn/source.txId/transaction.total_order
 %016X/%016X/%016X/%016X
 ```
 
 The binlog file index is the trailing numeric component of `__source_file` (for example, `mysql-bin.001234` becomes
 `1234`). MySQL requires `__source_ts_ns`, `__source_file`, `__source_pos`, and `__source_row`; PostgreSQL requires
-`__source_ts_ns`, `__source_lsn`, and `__source_txId`. The appropriate fields must be present and valid on every CDC
-mutation. Missing, malformed, negative, or larger-than-64-bit components fail the complete Debezium batch; the connector
-does not silently emit an unsequenced mutation.
+`__source_ts_ns`, `__source_lsn`, `__source_txId`, and `__transaction_total_order`. PostgreSQL transaction metadata must
+be enabled so multiple row changes at the same LSN receive distinct ordering values. PostgreSQL LSN values can be
+Debezium's standard decimal integer or the conventional hexadecimal `X/Y` format. The appropriate fields must be present
+and valid on every CDC mutation. Missing, malformed, negative, or larger-than-64-bit components fail the complete
+Debezium batch; the connector does not silently emit an unsequenced mutation.
 
 ### Append and destination concurrency
 
