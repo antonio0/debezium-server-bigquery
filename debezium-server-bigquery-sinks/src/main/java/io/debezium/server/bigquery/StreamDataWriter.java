@@ -14,6 +14,7 @@ import com.google.protobuf.Descriptors.DescriptorValidationException;
 import com.google.rpc.Status;
 import io.debezium.DebeziumException;
 import org.json.JSONArray;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.threeten.bp.Duration;
@@ -107,7 +108,7 @@ public class StreamDataWriter {
       if (response.hasError()) {
         throw createDebeziumExceptionFromResponseError(response);
       }
-      recreateCount.set(0);
+      resetRecreateCount();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw createDebeziumExceptionFromException(e);
@@ -123,6 +124,15 @@ public class StreamDataWriter {
       }
     }
     return streamWriter.append(data);
+  }
+
+  void appendPipelined(List<JSONObject> rows, int maxInFlight) {
+    BoundedAppendPipeline.append(rows, maxInFlight, this::appendAsync);
+    resetRecreateCount();
+  }
+
+  void resetRecreateCount() {
+    recreateCount.set(0);
   }
 
   static DebeziumException createDebeziumExceptionFromResponseError(AppendRowsResponse response) {

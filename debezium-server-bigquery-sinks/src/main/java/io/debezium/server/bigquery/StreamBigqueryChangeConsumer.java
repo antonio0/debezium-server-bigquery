@@ -209,7 +209,7 @@ public class StreamBigqueryChangeConsumer extends BaseChangeConsumer {
       if (config.maxInFlightAppends() == 1) {
         writer.appendSync(new JSONArray(rows));
       } else {
-        BoundedAppendPipeline.append(rows, config.maxInFlightAppends(), writer::appendAsync);
+        writer.appendPipelined(rows, config.maxInFlightAppends());
       }
     } catch (DescriptorValidationException | IOException e) {
       throw new DebeziumException("Failed to append data to stream " + writer.streamWriter.getStreamName(), e);
