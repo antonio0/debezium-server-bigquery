@@ -28,7 +28,7 @@ import com.google.common.annotations.Beta;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.Descriptors.DescriptorValidationException;
 import io.debezium.DebeziumException;
-import io.debezium.engine.ChangeEvent;
+import io.debezium.runtime.BatchEvent;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.Dependent;
@@ -75,7 +75,8 @@ public class StreamBigqueryChangeConsumer extends BaseChangeConsumer {
   }
 
   @PreDestroy
-  void closeStreams() {
+  @Override
+  public void close() {
     for (Map.Entry<String, StreamDataWriter> sw : jsonStreamWriters.entrySet()) {
       closeStreamWriter(sw.getValue(), sw.getKey());
     }
@@ -87,7 +88,7 @@ public class StreamBigqueryChangeConsumer extends BaseChangeConsumer {
       }
     }
 
-    shutdownExecutors();
+    super.close();
     if (writerExecutor != null) {
       writerExecutor.shutdown();
       try {
@@ -363,7 +364,7 @@ public class StreamBigqueryChangeConsumer extends BaseChangeConsumer {
   }
 
 
-  public RecordConverter eventAsRecordConverter(ChangeEvent<Object, Object> e) throws IOException {
+  public RecordConverter eventAsRecordConverter(BatchEvent e) throws IOException {
     return new StreamRecordConverter(e.destination(),
         valDeserializer.deserialize(e.destination(), getBytes(e.value())),
         e.key() == null ? null : keyDeserializer.deserialize(e.destination(), getBytes(e.key())),

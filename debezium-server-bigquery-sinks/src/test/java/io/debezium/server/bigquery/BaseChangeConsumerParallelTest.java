@@ -2,8 +2,8 @@ package io.debezium.server.bigquery;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import io.debezium.DebeziumException;
-import io.debezium.engine.ChangeEvent;
-import io.debezium.engine.DebeziumEngine;
+import io.debezium.runtime.BatchEvent;
+import io.debezium.runtime.CapturingEvents;
 import io.debezium.server.bigquery.batchsizewait.BatchSizeWait;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
@@ -39,38 +39,32 @@ class BaseChangeConsumerParallelTest {
   }
 
   @Test
-  void destinationFailurePreventsAllCommitterCalls() throws Exception {
+  void destinationFailurePreventsAllCommits() throws Exception {
     consumer = configuredConsumer(2, 1);
     consumer.failedDestination = "bad";
-    List<ChangeEvent<Object, Object>> records = List.of(event("good"), event("bad"));
-    DebeziumEngine.RecordCommitter<ChangeEvent<Object, Object>> committer = mock(DebeziumEngine.RecordCommitter.class);
+    List<BatchEvent> records = List.of(event("good"), event("bad"));
 
-    assertThrows(DebeziumException.class, () -> consumer.handleBatch(records, committer));
-    verify(committer, never()).markProcessed(org.mockito.ArgumentMatchers.any());
-    verify(committer, never()).markBatchFinished();
+    assertThrows(DebeziumException.class, () -> consumer.handle(events(records)));
+    records.forEach(record -> verify(record, never()).commit());
   }
 
   @Test
   void timeoutPreventsOffsetAdvancement() throws Exception {
     consumer = configuredConsumer(2, 0);
     consumer.blockUploads = true;
-    List<ChangeEvent<Object, Object>> records = List.of(event("slow"));
-    DebeziumEngine.RecordCommitter<ChangeEvent<Object, Object>> committer = mock(DebeziumEngine.RecordCommitter.class);
+    List<BatchEvent> records = List.of(event("slow"));
 
-    assertThrows(DebeziumException.class, () -> consumer.handleBatch(records, committer));
-    verify(committer, never()).markProcessed(org.mockito.ArgumentMatchers.any());
-    verify(committer, never()).markBatchFinished();
+    assertThrows(DebeziumException.class, () -> consumer.handle(events(records)));
+    verify(records.get(0), never()).commit();
   }
 
   @Test
-  void successfulDestinationsCommitEveryRecordAndFinishOnce() throws Exception {
+  void successfulDestinationsCommitEveryRecord() throws Exception {
     consumer = configuredConsumer(2, 1);
-    List<ChangeEvent<Object, Object>> records = List.of(event("one"), event("two"));
-    DebeziumEngine.RecordCommitter<ChangeEvent<Object, Object>> committer = mock(DebeziumEngine.RecordCommitter.class);
+    List<BatchEvent> records = List.of(event("one"), event("two"));
 
-    consumer.handleBatch(records, committer);
-    verify(committer, times(2)).markProcessed(org.mockito.ArgumentMatchers.any());
-    verify(committer, times(1)).markBatchFinished();
+    consumer.handle(events(records));
+    records.forEach(record -> verify(record, times(1)).commit());
   }
 
   @Test
@@ -118,11 +112,17 @@ class BaseChangeConsumerParallelTest {
     field.set(target, value);
   }
 
-  @SuppressWarnings("unchecked")
-  private static ChangeEvent<Object, Object> event(String destination) {
-    ChangeEvent<Object, Object> event = mock(ChangeEvent.class);
+  private static BatchEvent event(String destination) {
+    BatchEvent event = mock(BatchEvent.class);
     when(event.destination()).thenReturn(destination);
     return event;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static CapturingEvents<BatchEvent> events(List<BatchEvent> records) {
+    CapturingEvents<BatchEvent> events = mock(CapturingEvents.class);
+    when(events.records()).thenReturn(records);
+    return events;
   }
 
   private static class TestConsumer extends BaseChangeConsumer {
@@ -147,7 +147,7 @@ class BaseChangeConsumerParallelTest {
     }
 
     @Override
-    public RecordConverter eventAsRecordConverter(ChangeEvent<Object, Object> event) {
+    public RecordConverter eventAsRecordConverter(BatchEvent event) {
       RecordConverter converter = mock(RecordConverter.class);
       when(converter.valueSchema()).thenReturn(JsonNodeFactory.instance.objectNode());
       return converter;
